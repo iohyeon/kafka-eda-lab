@@ -118,6 +118,25 @@ EmbeddedKafka 기반 통합 테스트로 4가지 장애 상황을 재현하고, 
 
 상세 결과: [docs/failure-simulation-results.md](docs/failure-simulation-results.md)
 
+### 5. Correlation ID (분산 이벤트 추적)
+
+하나의 주문 요청이 만들어낸 **모든 이벤트에 같은 ID**를 붙여서 추적.
+
+```
+"주문했는데 알림이 안 왔어요" — 고객 문의
+→ grep "corr-aa14cf90"
+→ 4개 서비스의 전체 흐름이 한 번에 보인다:
+
+[Order]        correlationId=corr-aa14cf90 → 주문 생성, 이벤트 발행
+[Payment]      correlationId=corr-aa14cf90 → 결제 처리, 이벤트 발행
+[Inventory]    correlationId=corr-aa14cf90 → 재고 차감, 이벤트 발행
+[Notification] correlationId=corr-aa14cf90 → 알림 발송
+```
+
+- Kafka 메시지 **헤더**(`X-Correlation-ID`)로 전파 — payload와 분리
+- `CorrelationContext` (ThreadLocal) — 서비스 내부 어디서든 접근 가능
+- 비즈니스 데이터와 인프라 메타데이터를 분리하는 설계
+
 ---
 
 ## 코레오그래피 vs 오케스트레이션 비교
@@ -274,6 +293,7 @@ curl http://localhost:18081/api/saga/orders/{orderId}/saga-status
 - **EDA-16**: Outbox 패턴 + CDC — DB↔Kafka 원자성 문제
 - **EDA-17**: CQRS + Kafka — 읽기/쓰기 분리 설계
 - **EDA-18**: 장애 시뮬레이션 — 장애가 터졌을 때 어디를 봐야 하는가
+- **EDA-19**: 관측성 — Correlation ID로 분산 이벤트 추적하기
 
 ## Endpoints
 
