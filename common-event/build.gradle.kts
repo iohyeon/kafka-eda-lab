@@ -12,4 +12,5 @@ tasks.getByName<Jar>("jar") {
 dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+    implementation("org.apache.kafka:kafka-clients")
 }

@@ -1,18 +1,17 @@
 package com.eda.order;
 
+import com.eda.event.CorrelationContext;
 import com.eda.event.OrderEvent;
 import com.eda.event.Topics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * 주문 이벤트를 Kafka에 발행한다.
- *
- * 코레오그래피 패턴 — 주문 서비스는 "주문이 생겼다"는 사실만 발행하고 끝.
- * 결제/재고/알림이 이 이벤트를 구독하는지 주문 서비스는 모른다.
- */
+import java.nio.charset.StandardCharsets;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -21,14 +20,25 @@ public class OrderEventProducer {
     private final KafkaTemplate<String, OrderEvent> kafkaTemplate;
 
     public void publishOrderCreated(OrderEvent event) {
-        // Key = orderId → 같은 주문의 이벤트는 같은 파티션으로 (순서 보장)
-        kafkaTemplate.send(Topics.ORDER_EVENTS, event.orderId(), event)
+        ProducerRecord<String, OrderEvent> record =
+                new ProducerRecord<>(Topics.ORDER_EVENTS, event.orderId(), event);
+
+        // Correlation ID를 Kafka 헤더에 주입
+        String correlationId = CorrelationContext.get();
+        if (correlationId != null) {
+            record.headers().add(new RecordHeader(
+                    CorrelationContext.HEADER_KEY,
+                    correlationId.getBytes(StandardCharsets.UTF_8)));
+        }
+
+        kafkaTemplate.send(record)
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-                        log.error("[Order] 이벤트 발행 실패: orderId={}", event.orderId(), ex);
+                        log.error("[Order] 이벤트 발행 실패: correlationId={}, orderId={}",
+                                correlationId, event.orderId(), ex);
                     } else {
-                        log.info("[Order] 이벤트 발행 완료: orderId={}, partition={}, offset={}",
-                                event.orderId(),
+                        log.info("[Order] 이벤트 발행 완료: correlationId={}, orderId={}, partition={}, offset={}",
+                                correlationId, event.orderId(),
                                 result.getRecordMetadata().partition(),
                                 result.getRecordMetadata().offset());
                     }

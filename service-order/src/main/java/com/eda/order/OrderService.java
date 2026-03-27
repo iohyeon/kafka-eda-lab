@@ -1,5 +1,6 @@
 package com.eda.order;
 
+import com.eda.event.CorrelationContext;
 import com.eda.event.OrderEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,25 +23,25 @@ public class OrderService {
     public Order createOrder(String userId, BigDecimal totalAmount, int itemCount) {
         String orderId = UUID.randomUUID().toString();
 
-        // 1. 주문 저장
-        Order order = new Order(orderId, userId, totalAmount, itemCount);
-        orderRepository.save(order);
+        // Correlation ID 생성 — 이 주문에서 시작되는 모든 이벤트가 이 ID를 공유
+        String correlationId = "corr-" + UUID.randomUUID().toString().substring(0, 8);
+        CorrelationContext.set(correlationId);
 
-        // 2. 이벤트 발행 — "주문이 생겼다" (코레오그래피)
-        // 주문 서비스는 이후에 무슨 일이 일어나는지 모른다.
-        // 결제가 되는지, 재고가 빠지는지, 알림이 가는지 — 관심 없음.
-        OrderEvent event = new OrderEvent(
-                UUID.randomUUID().toString(),
-                orderId,
-                userId,
-                OrderEvent.EventType.ORDER_CREATED,
-                totalAmount,
-                itemCount,
-                LocalDateTime.now()
-        );
-        eventProducer.publishOrderCreated(event);
+        try {
+            Order order = new Order(orderId, userId, totalAmount, itemCount);
+            orderRepository.save(order);
 
-        log.info("[Order] 주문 생성 완료: orderId={}", orderId);
-        return order;
+            OrderEvent event = new OrderEvent(
+                    UUID.randomUUID().toString(), orderId, userId,
+                    OrderEvent.EventType.ORDER_CREATED,
+                    totalAmount, itemCount, LocalDateTime.now()
+            );
+            eventProducer.publishOrderCreated(event);
+
+            log.info("[Order] 주문 생성 완료: correlationId={}, orderId={}", correlationId, orderId);
+            return order;
+        } finally {
+            CorrelationContext.clear();
+        }
     }
 }

@@ -1,9 +1,6 @@
 package com.eda.payment;
 
-import com.eda.event.InventoryEvent;
-import com.eda.event.OrderEvent;
-import com.eda.event.PaymentEvent;
-import com.eda.event.Topics;
+import com.eda.event.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -37,14 +34,16 @@ public class PaymentEventConsumer {
     )
     public void handleOrderCreated(ConsumerRecord<String, OrderEvent> record, Acknowledgment ack) {
         OrderEvent event = record.value();
+        String correlationId = CorrelationContext.extractFromHeaders(record.headers());
 
         if (event.eventType() != OrderEvent.EventType.ORDER_CREATED) {
             ack.acknowledge();
+            CorrelationContext.clear();
             return;
         }
 
-        log.info("[Payment] 결제 처리 시작: orderId={}, amount={}",
-                event.orderId(), event.totalAmount());
+        log.info("[Payment] 결제 처리 시작: correlationId={}, orderId={}, amount={}",
+                correlationId, event.orderId(), event.totalAmount());
 
         try {
             processPayment(event);

@@ -1,8 +1,6 @@
 package com.eda.inventory;
 
-import com.eda.event.InventoryEvent;
-import com.eda.event.PaymentEvent;
-import com.eda.event.Topics;
+import com.eda.event.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -44,13 +42,15 @@ public class InventoryEventConsumer {
     )
     public void handlePaymentCompleted(ConsumerRecord<String, PaymentEvent> record, Acknowledgment ack) {
         PaymentEvent event = record.value();
+        String correlationId = CorrelationContext.extractFromHeaders(record.headers());
 
         if (event.eventType() != PaymentEvent.EventType.PAYMENT_COMPLETED) {
             ack.acknowledge();
+            CorrelationContext.clear();
             return;
         }
 
-        log.info("[Inventory] 재고 차감 시작: orderId={}, 현재재고={}", event.orderId(), stock);
+        log.info("[Inventory] 재고 차감 시작: correlationId={}, orderId={}, 현재재고={}", correlationId, event.orderId(), stock);
 
         try {
             deductStock(event);

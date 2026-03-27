@@ -1,7 +1,6 @@
 package com.eda.notification;
 
-import com.eda.event.InventoryEvent;
-import com.eda.event.Topics;
+import com.eda.event.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -28,13 +27,15 @@ public class NotificationEventConsumer {
     )
     public void handleInventoryDeducted(ConsumerRecord<String, InventoryEvent> record, Acknowledgment ack) {
         InventoryEvent event = record.value();
+        String correlationId = CorrelationContext.extractFromHeaders(record.headers());
 
         if (event.eventType() != InventoryEvent.EventType.INVENTORY_DEDUCTED) {
             ack.acknowledge();
+            CorrelationContext.clear();
             return;
         }
 
-        log.info("[Notification] 알림 발송: orderId={}", event.orderId());
+        log.info("[Notification] 알림 발송: correlationId={}, orderId={}", correlationId, event.orderId());
 
         sendNotification(event);
 
