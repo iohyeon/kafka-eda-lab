@@ -5,7 +5,7 @@ spring:
   application:
     name: service-notification
   kafka:
-    bootstrap-servers: localhost:9092,localhost:9093,localhost:9094
+    bootstrap-servers: localhost:19092,localhost:29092,localhost:39092
     consumer:
       group-id: notification-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer

@@ -1,18 +1,18 @@
 server:
-  port: 18081
+  port: 0  # 랜덤 포트
 
 spring:
   application:
-    name: service-order
+    name: eda-integration-test
   datasource:
-    url: jdbc:h2:mem:orderdb
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
   jpa:
     hibernate:
       ddl-auto: create
     show-sql: true
   kafka:
-    bootstrap-servers: localhost:19092,localhost:29092,localhost:39092
+    bootstrap-servers: ${spring.embedded.kafka.brokers}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -20,7 +20,7 @@ spring:
       properties:
         enable.idempotence: true
     consumer:
-      group-id: order-compensation-group
+      group-id: test-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       auto-offset-reset: earliest
