@@ -21,7 +21,7 @@
 ├─────────────────┤
 │  service-payment │ :18082 — 결제 처리, 결제 취소(보상)
 ├─────────────────┤
-│ service-inventory│ :8083  — 재고 차감, 재고 복구(보상)
+│ service-inventory│ :18083 — 재고 차감, 재고 복구(보상)
 ├─────────────────┤
 │service-notification│ :18084 — 알림 발송 (보상 불가, 마지막 단계)
 ├─────────────────┤
@@ -89,6 +89,37 @@ GET  /api/saga/orders/{orderId}/saga-status
 - 이벤트(사실 통보) vs 커맨드(지시)의 차이를 체감
 ```
 
+### 4. 장애 시뮬레이션 (Failure Simulation)
+
+> **"코드를 짤 수 있냐"가 아니라, "장애가 터졌을 때 어디를 봐야 하는지 아느냐"**
+
+EmbeddedKafka 기반 통합 테스트로 4가지 장애 상황을 재현하고, 시스템 반응을 검증.
+
+| 장애 | 시나리오 | 핵심 교훈 | 결과 |
+|------|---------|----------|------|
+| **오프셋 미커밋** | Consumer 죽음 → 메시지 재전달? | 멱등성 필수 (At-Least-Once) | PASS |
+| **중복 메시지** | 같은 이벤트 2건 → 이중 처리? | DB UNIQUE가 가장 안전한 방어 | PASS |
+| **체인 끊김** | 재고 서비스 다운 → 어디서 끊겼나? | Consumer Lag 모니터링 필수 | PASS |
+| **보상 실패** | 결제 취소도 실패 → 어떻게 복구? | DLQ → 재시도 → 수동 → 배치 | PASS |
+
+```bash
+# 장애 시뮬레이션 테스트 실행 (Docker 불필요)
+./gradlew :service-order:cleanTest :service-order:test \
+  --tests "com.eda.order.FailureSimulationTest"
+```
+
+실무 핵심 모니터링 포인트:
+```
+1. Consumer Lag      → 서비스 장애/지연 감지
+2. DLQ 메시지 수     → 처리 실패 감지
+3. 토픽별 메시지 수   → 이벤트 체인 끊김 감지
+4. 상태 불일치 쿼리   → 보상 실패 감지
+```
+
+상세 결과: [docs/failure-simulation-results.md](docs/failure-simulation-results.md)
+
+---
+
 ## 코레오그래피 vs 오케스트레이션 비교
 
 | | 코레오그래피 | 오케스트레이션 |
@@ -139,9 +170,11 @@ kafka-eda-lab/
 │       ├── NotificationEventConsumer.java # 코레오그래피
 │       └── SagaNotificationHandler.java   # 오케스트레이션 커맨드 핸들러
 ├── docker/
-│   └── docker-compose.yml         # Kafka 3-Broker KRaft + Kafka UI
+│   └── docker-compose.yml                # Kafka 3-Broker KRaft + Kafka UI
 └── docs/
-    └── test-scenarios.md          # 테스트 시나리오 및 기대 로그 패턴
+    ├── test-scenarios.md                 # 4개 시나리오 + 기대 로그 패턴
+    ├── test-results.md                   # 코레오그래피 Saga 실행 로그 + 시간 분석
+    └── failure-simulation-results.md     # 장애 시뮬레이션 4건 결과 + 실무 확인 포인트
 ```
 
 ## 실행 방법
@@ -208,9 +241,25 @@ curl http://localhost:18081/api/saga/orders/{orderId}/saga-status
 # 기대 응답 (보상): {"currentStep": "PAYMENT_CANCELLED", "status": "COMPENSATED"}
 ```
 
-### 4. 상세 테스트 시나리오
+### 4. 통합 테스트 (Docker 불필요 — EmbeddedKafka)
 
-[docs/test-scenarios.md](docs/test-scenarios.md) — 4개 시나리오 + 기대 로그 패턴 + 검증 체크리스트
+```bash
+# 코레오그래피 Saga 테스트 (정상 + 보상)
+./gradlew :service-order:cleanTest :service-order:test \
+  --tests "com.eda.order.ChoreographySagaIntegrationTest"
+
+# 장애 시뮬레이션 테스트 (4가지 장애)
+./gradlew :service-order:cleanTest :service-order:test \
+  --tests "com.eda.order.FailureSimulationTest"
+```
+
+## Documentation
+
+| 문서 | 내용 |
+|------|------|
+| [docs/test-scenarios.md](docs/test-scenarios.md) | 4개 시나리오 + 기대 로그 패턴 + 실행 명령어 |
+| [docs/test-results.md](docs/test-results.md) | 코레오그래피 Saga 실행 로그 + 시간 분석 (242ms/117ms) |
+| [docs/failure-simulation-results.md](docs/failure-simulation-results.md) | 장애 시뮬레이션 4건 + 실무 확인 포인트 + 교훈 |
 
 ## 학습 연결
 
@@ -224,6 +273,7 @@ curl http://localhost:18081/api/saga/orders/{orderId}/saga-status
 - **EDA-15**: Saga 패턴 — 코레오그래피 Saga + 오케스트레이션 Saga 구현
 - **EDA-16**: Outbox 패턴 + CDC — DB↔Kafka 원자성 문제
 - **EDA-17**: CQRS + Kafka — 읽기/쓰기 분리 설계
+- **EDA-18**: 장애 시뮬레이션 — 장애가 터졌을 때 어디를 봐야 하는가
 
 ## Endpoints
 
