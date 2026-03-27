@@ -17,13 +17,13 @@
 
 ```
 ┌─────────────────┐
-│  service-order   │ :8081  — 주문 생성, Saga 오케스트레이터
+│  service-order   │ :18081 — 주문 생성, Saga 오케스트레이터
 ├─────────────────┤
-│  service-payment │ :8082  — 결제 처리, 결제 취소(보상)
+│  service-payment │ :18082 — 결제 처리, 결제 취소(보상)
 ├─────────────────┤
 │ service-inventory│ :8083  — 재고 차감, 재고 복구(보상)
 ├─────────────────┤
-│service-notification│ :8084 — 알림 발송 (보상 불가, 마지막 단계)
+│service-notification│ :18084 — 알림 발송 (보상 불가, 마지막 단계)
 ├─────────────────┤
 │  common-event    │        — 공유 이벤트 스키마
 └─────────────────┘
@@ -114,7 +114,7 @@ kafka-eda-lab/
 │       ├── SagaCommand.java       # 오케스트레이션 커맨드
 │       ├── SagaReply.java         # 오케스트레이션 응답
 │       └── Topics.java            # 토픽명 상수
-├── service-order/                 # 주문 서비스 (:8081)
+├── service-order/                 # 주문 서비스 (:18081)
 │   └── src/main/java/com/eda/order/
 │       ├── OrderController.java          # 코레오그래피 API
 │       ├── OrderService.java
@@ -124,22 +124,24 @@ kafka-eda-lab/
 │           ├── OrderSaga.java            # Saga 상태 엔티티
 │           ├── OrderSagaOrchestrator.java # 오케스트레이터 (핵심)
 │           └── SagaOrderController.java   # 오케스트레이션 API
-├── service-payment/               # 결제 서비스 (:8082)
+├── service-payment/               # 결제 서비스 (:18082)
 │   └── src/main/java/com/eda/payment/
 │       ├── PaymentEventConsumer.java     # 코레오그래피 + 보상
 │       ├── PaymentEventProducer.java
 │       └── SagaPaymentHandler.java       # 오케스트레이션 커맨드 핸들러
-├── service-inventory/             # 재고 서비스 (:8083)
+├── service-inventory/             # 재고 서비스 (:18083)
 │   └── src/main/java/com/eda/inventory/
 │       ├── InventoryEventConsumer.java   # 코레오그래피 + 보상
 │       ├── InventoryEventProducer.java
 │       └── SagaInventoryHandler.java     # 오케스트레이션 커맨드 핸들러
-├── service-notification/          # 알림 서비스 (:8084)
+├── service-notification/          # 알림 서비스 (:18084)
 │   └── src/main/java/com/eda/notification/
 │       ├── NotificationEventConsumer.java # 코레오그래피
 │       └── SagaNotificationHandler.java   # 오케스트레이션 커맨드 핸들러
-└── docker/
-    └── docker-compose.yml         # Kafka 3-Broker KRaft + Kafka UI
+├── docker/
+│   └── docker-compose.yml         # Kafka 3-Broker KRaft + Kafka UI
+└── docs/
+    └── test-scenarios.md          # 테스트 시나리오 및 기대 로그 패턴
 ```
 
 ## 실행 방법
@@ -151,37 +153,64 @@ cd docker
 docker compose up -d
 ```
 
-- Kafka UI: http://localhost:8080
+- Kafka UI: http://localhost:8888
+
+> **포트 참고**: 기존 kafka-pipeline-lab(8081~8084, 19092~39092)과 충돌 방지를 위해
+> 서비스 포트 18081~18084, Kafka 포트 9092~9094, Kafka UI 8888을 사용.
 
 ### 2. 서비스 실행
 
 ```bash
 # 각 서비스를 별도 터미널에서 실행
-./gradlew :service-order:bootRun
-./gradlew :service-payment:bootRun
-./gradlew :service-inventory:bootRun
-./gradlew :service-notification:bootRun
+./gradlew :service-order:bootRun        # :18081
+./gradlew :service-payment:bootRun      # :18082
+./gradlew :service-inventory:bootRun    # :18083
+./gradlew :service-notification:bootRun # :18084
 ```
 
 ### 3. 테스트
 
-**코레오그래피:**
+**코레오그래피 — 정상 흐름:**
 ```bash
-curl -X POST http://localhost:8081/api/orders \
+curl -X POST http://localhost:18081/api/orders \
   -H "Content-Type: application/json" \
-  -d '{"userId": "user-1", "totalAmount": 10000, "itemCount": 1}'
+  -d '{"userId": "user-1", "totalAmount": 15000, "itemCount": 1}'
 ```
 
-**오케스트레이션 Saga:**
+**코레오그래피 Saga — 재고 부족 보상 (11번째 주문):**
 ```bash
-# 주문 생성 (Saga 시작)
-curl -X POST http://localhost:8081/api/saga/orders \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "user-1", "totalAmount": 10000, "itemCount": 1}'
+# 재고 10개 소진 후 11번째 주문
+for i in $(seq 1 10); do
+  curl -s -X POST http://localhost:18081/api/orders \
+    -H "Content-Type: application/json" \
+    -d "{\"userId\": \"user-$i\", \"totalAmount\": 10000, \"itemCount\": 1}"
+  sleep 1
+done
 
-# Saga 상태 조회
-curl http://localhost:8081/api/saga/orders/{orderId}/saga-status
+# 11번째 → 보상 체인 발동 (결제 취소 → 주문 취소)
+curl -X POST http://localhost:18081/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "user-11", "totalAmount": 10000, "itemCount": 1}'
 ```
+
+**오케스트레이션 Saga — 정상 흐름:**
+```bash
+curl -X POST http://localhost:18081/api/saga/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "user-1", "totalAmount": 20000, "itemCount": 1}'
+```
+
+**Saga 상태 조회:**
+```bash
+curl http://localhost:18081/api/saga/orders/{orderId}/saga-status
+
+# 기대 응답 (정상): {"currentStep": "NOTIFICATION_SENT", "status": "COMPLETED"}
+# 기대 응답 (보상): {"currentStep": "PAYMENT_CANCELLED", "status": "COMPENSATED"}
+```
+
+### 4. 상세 테스트 시나리오
+
+[docs/test-scenarios.md](docs/test-scenarios.md) — 4개 시나리오 + 기대 로그 패턴 + 검증 체크리스트
 
 ## 학습 연결
 
@@ -193,3 +222,28 @@ curl http://localhost:8081/api/saga/orders/{orderId}/saga-status
 - **EDA-09**: Idempotent Producer 적용
 - **EDA-14**: 코레오그래피 vs 오케스트레이션 두 패턴 구현
 - **EDA-15**: Saga 패턴 — 코레오그래피 Saga + 오케스트레이션 Saga 구현
+- **EDA-16**: Outbox 패턴 + CDC — DB↔Kafka 원자성 문제
+- **EDA-17**: CQRS + Kafka — 읽기/쓰기 분리 설계
+
+## Endpoints
+
+| Service | URL |
+|---------|-----|
+| Order Service | http://localhost:18081 |
+| Payment Service | http://localhost:18082 |
+| Inventory Service | http://localhost:18083 |
+| Notification Service | http://localhost:18084 |
+| Kafka UI | http://localhost:8888 |
+
+## Key Design Decisions
+
+| 결정 | 선택 | 근거 |
+|------|------|------|
+| Broker 수 | 3 (KRaft) | 과반수 투표 최소 홀수, ZooKeeper 없음 (EDA-13) |
+| acks | all | 메시지 유실 방지 (EDA-06) |
+| min.insync.replicas | 2 | ISR 1대일 때 쓰기 거부 (EDA-06) |
+| ACK 모드 | Manual | 처리 완료 후에만 offset 커밋 (EDA-07) |
+| Idempotent Producer | true | PID+Seq 기반 중복 전송 방지 (EDA-09) |
+| Saga 상태 저장 | DB | 오케스트레이터 장애 시 복구 가능 |
+| 알림 단계 순서 | 마지막 | 보상 불가 동작이므로 Saga 최후단에 배치 (EDA-15) |
+| 포트 범위 | 18081~18084 | kafka-pipeline-lab(8081~8084)과 충돌 방지 |
