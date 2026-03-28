@@ -340,6 +340,8 @@ curl http://localhost:18081/api/saga/orders/{orderId}/saga-status
 - **EDA-18**: 장애 시뮬레이션 — 장애가 터졌을 때 어디를 봐야 하는가
 - **EDA-19**: 관측성 — Correlation ID로 분산 이벤트 추적하기
 - **EDA-20**: Kafka Streams 심화 — 스트림 프로세싱의 내부 동작과 설계 판단
+- **EDA-21**: Outbox에서 CDC로 — Polling Relay의 한계와 Debezium 전환 판단
+- **EDA-22**: Spring TX 이벤트 라이프사이클 — 이벤트 발행 시점이 시스템 안전성을 결정한다
 
 ## Endpoints
 
