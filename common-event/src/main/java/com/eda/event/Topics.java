@@ -13,6 +13,11 @@ public final class Topics {
     public static final String INVENTORY_EVENTS = "inventory-events";
     public static final String NOTIFICATION_EVENTS = "notification-events";
 
+    // Kafka Streams 출력 토픽
+    public static final String STREAMS_ORDER_STATS = "streams-order-stats";
+    public static final String STREAMS_ORDER_ENRICHED = "streams-order-enriched";
+    public static final String STREAMS_HIGH_VALUE_ORDERS = "streams-high-value-orders";
+
     // 오케스트레이션 Saga 전용 토픽
     public static final String SAGA_PAYMENT_COMMAND = "saga-payment-command";
     public static final String SAGA_INVENTORY_COMMAND = "saga-inventory-command";

@@ -1,0 +1,19 @@
+server:
+  port: 18085
+
+spring:
+  application:
+    name: service-streams
+  kafka:
+    bootstrap-servers: localhost:9092,localhost:9093,localhost:9094
+    streams:
+      application-id: eda-streams
+      properties:
+        default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+        default.value.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+        # 개발 환경: 상태 저장소를 /tmp에
+        state.dir: /tmp/kafka-streams/eda-streams
+        # Exactly-Once Semantics (EOS) — Streams 내부 처리 보장
+        processing.guarantee: exactly_once_v2
+        # 커밋 간격 (기본 30초 → 1초로 줄여 데모에서 빠르게 확인)
+        commit.interval.ms: 1000
