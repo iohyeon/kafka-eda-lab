@@ -25,6 +25,8 @@
 ├─────────────────┤
 │service-notification│ :18084 — 알림 발송 (보상 불가, 마지막 단계)
 ├─────────────────┤
+│ service-streams  │ :18085 — Kafka Streams 실시간 집계/변환/조인
+├─────────────────┤
 │  common-event    │        — 공유 이벤트 스키마
 └─────────────────┘
 ```
@@ -137,6 +139,39 @@ EmbeddedKafka 기반 통합 테스트로 4가지 장애 상황을 재현하고, 
 - `CorrelationContext` (ThreadLocal) — 서비스 내부 어디서든 접근 가능
 - 비즈니스 데이터와 인프라 메타데이터를 분리하는 설계
 
+### 6. Kafka Streams (실시간 스트림 프로세싱)
+
+> **Consumer API로 직접 구현하던 집계/변환/조인을 선언적 DSL로 해결**
+
+별도 클러스터 없이 Java 라이브러리만으로 스트림 처리. 3가지 토폴로지 구현:
+
+| 토폴로지 | 패턴 | 입력 | 출력 | State Store |
+|----------|------|------|------|-------------|
+| **실시간 집계** | Windowed Aggregation | order-events | streams-order-stats | RocksDB (윈도우별 OrderStats) |
+| **고액 주문 감지** | Filter + Transform | order-events | streams-high-value-orders | 없음 (Stateless) |
+| **주문-결제 조인** | KStream-KStream Join | order + payment | streams-order-enriched | WindowStore × 2 |
+
+```
+Source(order-events) ──→ Filter(ORDER_CREATED)
+                              │
+                    ┌─────────┼──────────────┐
+                    ▼         ▼              ▼
+              Aggregate   Filter(≥50K)    Join ← Source(payment-events)
+                 │          │              │
+                 ▼          ▼              ▼
+           order-stats  high-value    order-enriched
+```
+
+핵심 기술:
+- **Exactly-Once Semantics (EOS)**: `processing.guarantee=exactly_once_v2` — 결과 쓰기와 오프셋 커밋을 Kafka Transaction으로 원자적 처리
+- **RocksDB State Store**: Off-heap, Changelog Topic으로 장애 복구
+- **TopologyTestDriver**: 브로커 없이 밀리초 단위로 토폴로지 검증 (7개 테스트)
+
+```bash
+# Kafka Streams 토폴로지 테스트 (Docker 불필요)
+./gradlew :service-streams:cleanTest :service-streams:test
+```
+
 ---
 
 ## 코레오그래피 vs 오케스트레이션 비교
@@ -188,6 +223,13 @@ kafka-eda-lab/
 │   └── src/main/java/com/eda/notification/
 │       ├── NotificationEventConsumer.java # 코레오그래피
 │       └── SagaNotificationHandler.java   # 오케스트레이션 커맨드 핸들러
+├── service-streams/               # Kafka Streams (:18085)
+│   └── src/main/java/com/eda/streams/
+│       ├── topology/OrderStreamTopology.java  # 3개 토폴로지 (집계/필터/조인)
+│       ├── model/OrderStats.java              # 윈도우별 집계 결과
+│       ├── model/EnrichedOrder.java           # 주문+결제 조인 결과
+│       ├── serde/JsonSerde.java               # Streams용 JSON Serde
+│       └── config/KafkaStreamsConfig.java      # EOS + 토폴로지 등록
 ├── docker/
 │   └── docker-compose.yml                # Kafka 3-Broker KRaft + Kafka UI
 └── docs/
@@ -270,6 +312,9 @@ curl http://localhost:18081/api/saga/orders/{orderId}/saga-status
 # 장애 시뮬레이션 테스트 (4가지 장애)
 ./gradlew :service-order:cleanTest :service-order:test \
   --tests "com.eda.order.FailureSimulationTest"
+
+# Kafka Streams 토폴로지 테스트 (집계/필터/조인 — 7개)
+./gradlew :service-streams:cleanTest :service-streams:test
 ```
 
 ## Documentation
@@ -294,6 +339,7 @@ curl http://localhost:18081/api/saga/orders/{orderId}/saga-status
 - **EDA-17**: CQRS + Kafka — 읽기/쓰기 분리 설계
 - **EDA-18**: 장애 시뮬레이션 — 장애가 터졌을 때 어디를 봐야 하는가
 - **EDA-19**: 관측성 — Correlation ID로 분산 이벤트 추적하기
+- **EDA-20**: Kafka Streams 심화 — 스트림 프로세싱의 내부 동작과 설계 판단
 
 ## Endpoints
 
